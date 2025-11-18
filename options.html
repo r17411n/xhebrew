@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>xhebrew Options</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 12px; }
+    .row { margin-bottom: 8px; }
+    input[type=text] { width: 45%; padding: 4px; margin-right: 6px; }
+    button { margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <h1>xhebrew — Find & Replace Mappings</h1>
+  <div id="list"></div>
+  <div style="margin-top:12px">
+    <button id="add">Add mapping</button>
+    <button id="save">Save</button>
+    <button id="reset">Reset to defaults</button>
+  </div>
+  <fieldset style="margin-top:12px; padding:8px">
+    <legend>Auto-translate Hebrew Tweets</legend>
+    <label><input type="checkbox" id="translateEnabled"> Enable auto-translate (detect Hebrew)</label>
+    <div style="margin-top:8px">
+      <label>Target language: <input id="translateTarget" type="text" value="en" placeholder="e.g. en, fr, es"></label>
+    </div>
+    <div style="margin-top:6px">
+      <label><input type="checkbox" id="translateReplace" checked> Replace original text with translation (uncheck to append translation)</label>
+    </div>
+    <div style="margin-top:8px">
+      <button id="clearCache">Clear translation cache</button>
+    </div>
+    <div style="margin-top:8px">
+      <label>Max cache entries: <input id="cacheMaxEntries" type="number" min="1" step="1" value="1000"></label>
+    </div>
+    <div style="margin-top:8px">
+      <label>Cache TTL (days): <input id="cacheTTLDays" type="number" min="0" step="1" value="30"></label>
+      <button id="purgeExpired" style="margin-left:8px">Purge expired</button>
+    </div>
+    <div id="cacheStats" style="margin-top:8px; color:#333">Cache: loading...</div>
+    <fieldset style="margin-top:12px; padding:8px">
+      <legend>Google Cloud Translate (optional)</legend>
+      <label><input type="checkbox" id="useCloudTranslate"> Use Google Cloud Translate API</label>
+      <div style="margin-top:8px">
+        <label>API key: <input id="googleApiKey" type="password" placeholder="Enter API key"></label>
+        <button id="toggleShowKey" type="button">Show</button>
+        <button id="rotateKey" type="button">Rotate key</button>
+      </div>
+      <p style="margin-top:8px; color:#444">If enabled, translations will use the official Google Cloud Translate endpoint. Storing an API key in extension storage is convenient but not perfectly secret — consider using a background proxy for production.</p>
+    </fieldset>
+    <p style="margin-top:8px; color:#444">Use standard BCP-47 language codes (e.g. <code>en</code>, <code>fr</code>). This feature sends text to Google's translate endpoint; it may be rate limited.</p>
+  </fieldset>
+  <p style="margin-top:12px; color:#444">Use `/pattern/flags` for regex matches (e.g. <code>/שלום/gi</code>), or plain text for literal matches.</p>
+  <script src="options.js"></script>
+</body>
+</html>

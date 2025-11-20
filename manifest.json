@@ -14,7 +14,13 @@
     },
     "content_scripts": [
         {
-            "matches": ["https://twitter.com/*", "https://x.com/*"],
+            "matches": [
+                "https://twitter.com/*",
+                "https://www.twitter.com/*",
+                "https://x.com/*",
+                "https://www.x.com/*",
+                "https://*.x.com/*"
+            ],
             "js": ["xhebrew.js"],
             "run_at": "document_end"
         }
@@ -33,9 +39,13 @@
         "cookies",
         "browsingData",
         "webRequest",
+        "tabs",
         "https://twitter.com/*",
+        "https://*.twitter.com/*",
         "https://x.com/*",
+        "https://*.x.com/*",
         "https://translate.googleapis.com/*",
-        "https://translation.googleapis.com/*"
+        "https://translation.googleapis.com/*",
+        "<all_urls>"
     ]
 }

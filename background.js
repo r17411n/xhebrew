@@ -67,6 +67,7 @@ function scheduleSavePersistentCache() {
 
 async function doTranslate(text, target) {
   if (!text || !target) return '';
+  // Build a key that includes current mode so cache is separate per endpoint
   const modePrefix = USE_CLOUD ? 'cloud|' : 'public|';
   const key = modePrefix + text + '||' + target;
   if (_inMemoryCache.has(key)) return _inMemoryCache.get(key);
@@ -76,42 +77,151 @@ async function doTranslate(text, target) {
     return val;
   }
 
-  const p = (async () => {
-    try {
-      if (USE_CLOUD && GOOGLE_API_KEY) {
-        const url = 'https://translation.googleapis.com/language/translate/v2?key=' + encodeURIComponent(GOOGLE_API_KEY) + '&q=' + encodeURIComponent(text) + '&target=' + encodeURIComponent(target) + '&format=text';
-        const resp = await fetch(url, { method: 'GET' });
-        if (!resp.ok) return '';
-        const data = await resp.json();
-        if (data && data.data && Array.isArray(data.data.translations) && data.data.translations[0]) {
-          return data.data.translations[0].translatedText || '';
-        }
-        return '';
-      } else {
-        const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + encodeURIComponent(target) + '&dt=t&q=' + encodeURIComponent(text);
-        const resp = await fetch(url, { method: 'GET' });
-        if (!resp.ok) return '';
-        const data = await resp.json();
-        if (Array.isArray(data) && Array.isArray(data[0])) {
-          return data[0].map(p => p[0]).join('');
-        }
-        return '';
-      }
-    } catch (e) {
-      return '';
-    }
-  })();
+  // Not cached: queue for batched translation
+  return queueTranslationRequest(key, text, target);
+}
 
-  _inMemoryCache.set(key, p);
-  p.then(result => {
-    if (result) {
-      try {
-        _persistentCache[key] = { v: result, t: Date.now() };
-        scheduleSavePersistentCache();
-      } catch (e) {}
+// Batching setup: pendingRequests maps key -> { text, target, resolvers: [resolveFunc,...] }
+const pendingRequests = new Map();
+let pendingFlushTimer = null;
+const BATCH_DEBOUNCE_MS = 120; // short window to aggregate requests
+
+function queueTranslationRequest(key, text, target) {
+  return new Promise((resolve) => {
+    if (pendingRequests.has(key)) {
+      pendingRequests.get(key).resolvers.push(resolve);
+    } else {
+      pendingRequests.set(key, { text, target, resolvers: [resolve] });
     }
-  }).catch(() => {});
-  return p;
+    schedulePendingFlush();
+  });
+}
+
+function schedulePendingFlush() {
+  if (pendingFlushTimer) return;
+  pendingFlushTimer = setTimeout(() => {
+    pendingFlushTimer = null;
+    flushPendingRequests();
+  }, BATCH_DEBOUNCE_MS);
+}
+
+async function flushPendingRequests() {
+  if (pendingRequests.size === 0) return;
+  // Group pending requests by target language to allow batching per target
+  const byTarget = new Map();
+  for (const [key, entry] of pendingRequests.entries()) {
+    const t = entry.target || 'en';
+    if (!byTarget.has(t)) byTarget.set(t, []);
+    byTarget.get(t).push({ key, text: entry.text, resolvers: entry.resolvers });
+  }
+
+  const now = Date.now();
+  // Clear pendingRequests map now to allow new incoming requests to be queued
+  pendingRequests.clear();
+
+  for (const [target, items] of byTarget.entries()) {
+    // dedupe by text/key
+    const unique = [];
+    const seen = new Set();
+    for (const it of items) {
+      if (!seen.has(it.key)) {
+        seen.add(it.key);
+        unique.push(it);
+      }
+    }
+
+    // For any unique item, check persistent cache again (in case it was saved meanwhile)
+    const toTranslate = [];
+    const translateIndex = []; // maps index in toTranslate -> key
+    for (const it of unique) {
+      if (_inMemoryCache.has(it.key)) continue;
+      if (_persistentCache && _persistentCache[it.key] && _persistentCache[it.key].v) {
+        const v = _persistentCache[it.key].v;
+        _inMemoryCache.set(it.key, Promise.resolve(v));
+        continue;
+      }
+      toTranslate.push(it.text);
+      translateIndex.push(it.key);
+    }
+
+    let results = [];
+    if (toTranslate.length > 0) {
+      try {
+        if (USE_CLOUD && GOOGLE_API_KEY) {
+          // Cloud Translate v2 supports multiple q parameters
+          const params = new URLSearchParams();
+          for (const q of toTranslate) params.append('q', q);
+          params.append('target', target);
+          params.append('format', 'text');
+          const url = 'https://translation.googleapis.com/language/translate/v2?key=' + encodeURIComponent(GOOGLE_API_KEY) + '&' + params.toString();
+          const resp = await fetch(url, { method: 'GET' });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.data && Array.isArray(data.data.translations)) {
+              results = data.data.translations.map(t => t.translatedText || '');
+            }
+          }
+        } else {
+          // Public translate_a endpoint: multiple q params and single tl
+          const base = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t&tl=' + encodeURIComponent(target);
+          const qs = toTranslate.map(t => '&q=' + encodeURIComponent(t)).join('');
+          const url = base + qs;
+          const resp = await fetch(url, { method: 'GET' });
+          if (resp.ok) {
+            const data = await resp.json();
+            // data[0] should be an array of per-input arrays when multiple q provided
+            if (Array.isArray(data) && Array.isArray(data[0])) {
+              // If data[0][i] exists and is array of segments
+              if (Array.isArray(data[0][0]) && data[0].length === toTranslate.length) {
+                results = data[0].map(segArr => segArr.map(p => p[0]).join(''));
+              } else {
+                // Fallback: join first-level segments
+                results = [data[0].map(p => p[0]).join('')];
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // network error: leave results empty
+      }
+    }
+
+    // Assign translations to caches and resolve resolvers
+    // For items that were not translated (missing in results), resolve with empty string
+    for (let i = 0; i < unique.length; i++) {
+      const key = unique[i].key;
+      let translated = '';
+      const idx = translateIndex.indexOf(key);
+      if (idx >= 0 && results[idx] !== undefined) translated = results[idx];
+      // If translation was not in results but in-memory cache exists, use it
+      if (!translated && _inMemoryCache.has(key)) {
+        try { translated = await Promise.resolve(_inMemoryCache.get(key)); } catch (e) { translated = ''; }
+      }
+      // set caches
+      if (translated) {
+        _inMemoryCache.set(key, Promise.resolve(translated));
+        try { _persistentCache[key] = { v: translated, t: now }; } catch (e) {}
+      }
+      // resolve all resolvers for this key (find original entry in items)
+      for (const it of items) {
+        if (it.key === key) {
+          for (const r of it.resolvers) {
+            try { r(translated); } catch (e) {}
+          }
+        }
+      }
+    }
+
+    // Save persistent cache (debounced)
+    scheduleSavePersistentCache();
+  }
+
+}
+
+async function openPage() {
+    browser.tabs.create({
+        url: 'option.html'
+    });
 }
 
 browser.runtime.onMessage.addListener((msg, sender) => {
@@ -165,5 +275,9 @@ browser.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-// initial load
+browser.browserAction.onClicked.addListener(() => {
+    openPage();
+});
+
+// Initial load
 loadSettingsAndCache();

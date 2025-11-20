@@ -279,5 +279,10 @@ browser.browserAction.onClicked.addListener(() => {
     openPage();
 });
 
+// ...existing code...
+browser.runtime.onMessage.addListener((msg, sender) => {
+  console.log('background received message', msg && msg.type, 'from tab', sender && sender.tab && sender.tab.id);
+  // ...existing code...
+});
 // Initial load
 loadSettingsAndCache();

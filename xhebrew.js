@@ -1,5 +1,8 @@
 // Content script: replace text nodes using mappings from browser.storage.local
 (function () {
+    // ...existing code...
+    console.log('xhebrew content script loaded on', location.href);
+    // ...existing code...
 	const DEFAULTS = [
 		{ find: "Twitter", replace: "X (Twitter)" },
 		{ find: "hello", replace: "שלום" }

@@ -29,6 +29,10 @@
     },
     "permissions": [
         "storage",
+        "activeTab",
+        "cookies",
+        "browsingData",
+        "webRequest",
         "https://twitter.com/*",
         "https://x.com/*",
         "https://translate.googleapis.com/*",

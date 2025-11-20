@@ -9,6 +9,7 @@ Install (temporary) in Firefox for testing:
 3. Visit `https://twitter.com` or `https://x.com` and the content script will run.
 
 Usage:
+- Has functionality to translate hebrew tweets through Google Translate(via the options screen)
 - Open the extension options (from the Add-ons page or open `options.html` via the manifest) to edit mappings.
 - In the options page, add mappings. Use `/pattern/flags` syntax for regex (for example `/שלום/gi`). Plain strings are treated as literal matches.
 
